@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # set path and first
-lightx2v_path=
-model_path=
+lightx2v_path=/Wan_models/LightX2V
+model_path=/Wan_models/models/wan2.2_models
 
 export CUDA_VISIBLE_DEVICES=0
 

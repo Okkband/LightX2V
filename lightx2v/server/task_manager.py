@@ -22,6 +22,7 @@ class TaskInfo:
     task_id: str
     status: TaskStatus
     message: Any
+    submit_time: datetime = field(default_factory=datetime.now)
     start_time: datetime = field(default_factory=datetime.now)
     end_time: Optional[datetime] = None
     error: Optional[str] = None
@@ -138,7 +139,7 @@ class TaskManager:
         if not task:
             return None
 
-        return {"task_id": task.task_id, "status": task.status.value, "start_time": task.start_time, "end_time": task.end_time, "error": task.error, "save_result_path": task.save_result_path}
+        return {"task_id": task.task_id, "status": task.status.value, "submit_time": task.submit_time, "start_time": task.start_time, "end_time": task.end_time, "error": task.error, "save_result_path": task.save_result_path}
 
     def get_all_tasks(self):
         with self._lock:

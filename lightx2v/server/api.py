@@ -20,7 +20,40 @@ from .schema import (
 )
 from .service import DistributedInferenceService, FileService, VideoGenerationService
 from .task_manager import TaskStatus, task_manager
+# 添加/修改这些 import
+import os
+from fastapi import Depends, HTTPException, Security
+from fastapi.security import HTTPBearer
+from fastapi.security.http import HTTPAuthorizationCredentials
 
+
+# 1. 实例化 Bearer Scheme
+#    这将告诉 FastAPI 在 Swagger UI 中如何显示认证，并帮助从请求中提取凭证
+bearer_scheme = HTTPBearer(description="请输入你的 Bearer Token")
+
+# VALID_BEARER_TOKEN = os.getenv("BEARER_TOKEN")
+VALID_BEARER_TOKEN = "SenseTime-LightX2V-Secret-Token"  # 临时硬编码，方便测试
+if not VALID_BEARER_TOKEN:
+    logger.warning("环境变量 BEARER_TOKEN 未设置，将使用一个不安全的默认值。")
+    VALID_BEARER_TOKEN = "your-default-secret-bearer-token" # 仅供开发测试
+
+# 3. 创建依赖函数来验证 Token
+async def verify_token(credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)):
+    """
+    一个依赖项，用于验证 Authorization header 中的 Bearer Token
+    """
+    if not credentials or credentials.scheme != "Bearer":
+        raise HTTPException(
+            status_code=403, detail="无效的认证方案 (Invalid authentication scheme)"
+        )
+    if credentials.credentials != VALID_BEARER_TOKEN:
+        raise HTTPException(
+            status_code=401,
+            detail="无效或过期的Token (Invalid or expired token)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # 验证通过，可以返回True或Token本身，但在这里我们不需要返回值
+    return True
 
 class ApiServer:
     def __init__(self, max_queue_size: int = 10, app: Optional[FastAPI] = None):
@@ -32,10 +65,10 @@ class ApiServer:
 
         self.processing_thread = None
         self.stop_processing = threading.Event()
-
-        self.tasks_router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
-        self.files_router = APIRouter(prefix="/v1/files", tags=["files"])
-        self.service_router = APIRouter(prefix="/v1/service", tags=["service"])
+        token_dependency = Depends(verify_token)
+        self.tasks_router = APIRouter(prefix="/v1/tasks", tags=["tasks"], dependencies=[token_dependency])
+        self.files_router = APIRouter(prefix="/v1/files", tags=["files"], dependencies=[token_dependency])
+        self.service_router = APIRouter(prefix="/v1/service", tags=["service"], dependencies=[token_dependency])
 
         self._setup_routes()
 
@@ -310,8 +343,19 @@ class ApiServer:
 
             timeout = httpx.Timeout(connect=5.0, read=5.0, write=5.0, pool=5.0)
             async with httpx.AsyncClient(verify=False, timeout=timeout) as client:
-                response = await client.head(image_url, follow_redirects=True)
-                return response.status_code < 400
+                for method in ["HEAD", "GET"]:
+                    try:
+                        print(f"➡️ 尝试 {method} 请求: {image_url}")
+                        response = await client.request(method, image_url, follow_redirects=True)
+                        print(f"🔎 响应状态码: {response.status_code}")
+                        if response.status_code < 400:
+                            print(f"✅ URL 可访问 ({method} 成功)")
+                            return True
+                    except Exception as inner_e:
+                        print(f"⚠️ {method} 请求失败: {inner_e}")
+                        continue
+            print(f"❌ URL 验证失败: {image_url}")
+            return False
         except Exception as e:
             logger.warning(f"URL validation failed for {image_url}: {str(e)}")
             return False
